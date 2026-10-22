@@ -47,7 +47,7 @@ else:
   normal `Reply`, not an exception.
 * **Z-Road's own errors** raise `ZRoadError` with a stable `code`
   (`access_denied`, `unknown_provider`, `provider_unreachable`, `rate_limited`,
-  `invalid_request`, ...) and a `retryable` flag. They are recognised by the
+  `invalid_request`, `schema_violation`, ...) and a `retryable` flag. They are recognised by the
   `Z-Road-Error` response header.
 * `Unreachable` means the security server you call could not be reached.
 * `reply.proof` holds the signed evidence of the exchange (a dict) for live
