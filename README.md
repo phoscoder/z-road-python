@@ -84,4 +84,4 @@ It passed against the demo network at the time of writing.
 
 Early. The API follows Z-Road's internal API description
 (`docs/openapi-internal.yaml` in the Z-Road repository) and may change with it.
-No licence has been chosen yet.
+Licensed under the [MIT licence](LICENSE).
