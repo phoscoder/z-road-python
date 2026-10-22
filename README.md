@@ -74,7 +74,10 @@ retries with backoff, safely (the message id makes retries idempotent).
 PYTHONPATH=src python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-These tests use a scripted fake security server and need nothing else.
+These tests use a scripted fake security server and need nothing else. `tests/test_conformance.py` runs the
+language-neutral SDK conformance scenarios from the Z-Road repository
+(`guides/sdk-conformance/scenarios.json`, copied to `tests/conformance/`); it is the worked example for anyone
+writing a client in another language.
 `tests/integration_demo.py` runs the same checks against a real network: start the
 Z-Road demo with `ZROAD_DEMO_KEEP_SECS=120 scripts/demo.sh` in the Z-Road
 repository and run `ZROAD_URL=http://127.0.0.1:7001 python tests/integration_demo.py`.

@@ -1,0 +1,529 @@
+{
+  "format": 1,
+  "description": "Language-neutral behaviour tests for a Z-Road SDK. Run a scripted fake security server, perform 'operation' with a client configured with 'client_options', and check the requests it received and the outcome. See guides/04-sdk-development.md.",
+  "constants": {
+    "client": "ZW/COM/12345678/accounts-payable",
+    "service": "ZW/GOV/ZIMRA/tax-clearance/verify/v1"
+  },
+  "invalid_clients": [
+    "ZW/COM/1",
+    "ZW/COM/1/",
+    "a/b/c/d/e"
+  ],
+  "scenarios": [
+    {
+      "name": "call_returns_the_provider_answer_and_proof",
+      "description": "A successful call returns the provider's status and body, the message id, and the proof from the Z-Road-Proof header.",
+      "operation": {
+        "type": "call",
+        "service": "{service}",
+        "body": {
+          "tin": "2000123456"
+        },
+        "subject": "2000123456"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {
+            "Content-Type": "application/json",
+            "Z-Road-Message-Id": "abc123",
+            "Z-Road-Proof": "eyJyZXF1ZXN0Ijp7InBheWxvYWRfYjY0IjoieCJ9fQ=="
+          },
+          "body": {
+            "status": "VALID"
+          }
+        }
+      ],
+      "expect_requests": [
+        {
+          "method": "POST",
+          "path": "/r1/{service}",
+          "headers": {
+            "Z-Road-Client": "{client}",
+            "Z-Road-Subject": "2000123456",
+            "Content-Type": "application/json"
+          },
+          "json_body": {
+            "tin": "2000123456"
+          }
+        }
+      ],
+      "expect": {
+        "reply": {
+          "status": 200,
+          "ok": true,
+          "json": {
+            "status": "VALID"
+          },
+          "message_id": "abc123",
+          "proof_present": true
+        }
+      }
+    },
+    {
+      "name": "provider_error_status_is_a_reply_not_an_error",
+      "description": "A 404 from the provider's own system (no Z-Road-Error header) is a normal reply.",
+      "operation": {
+        "type": "call",
+        "service": "{service}",
+        "body": {
+          "tin": "0"
+        }
+      },
+      "responses": [
+        {
+          "status": 404,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "status": "NOT_FOUND"
+          }
+        }
+      ],
+      "expect": {
+        "reply": {
+          "status": 404,
+          "ok": false,
+          "json": {
+            "status": "NOT_FOUND"
+          }
+        }
+      }
+    },
+    {
+      "name": "zroad_error_access_denied",
+      "description": "An error raised by Z-Road (Z-Road-Error header) becomes a typed error with the code from the body. Not retryable.",
+      "operation": {
+        "type": "call",
+        "service": "{service}",
+        "body": {}
+      },
+      "responses": [
+        {
+          "status": 403,
+          "headers": {
+            "Content-Type": "application/json",
+            "Z-Road-Error": "access_denied"
+          },
+          "body": {
+            "error": "access_denied",
+            "message": "no"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "kind": "zroad",
+          "status": 403,
+          "code": "access_denied",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "name": "zroad_error_with_retry_after_is_retryable",
+      "description": "Retry-After on a Z-Road error marks it retryable.",
+      "operation": {
+        "type": "call",
+        "service": "{service}",
+        "body": {}
+      },
+      "responses": [
+        {
+          "status": 503,
+          "headers": {
+            "Content-Type": "application/json",
+            "Z-Road-Error": "provider_unreachable",
+            "Retry-After": "5"
+          },
+          "body": {
+            "error": "provider_unreachable",
+            "message": "down"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "kind": "zroad",
+          "status": 503,
+          "code": "provider_unreachable",
+          "retryable": true
+        }
+      }
+    },
+    {
+      "name": "zroad_error_with_unreadable_body",
+      "description": "If the body of a Z-Road error is not the expected JSON, the code is 'unknown' and nothing crashes.",
+      "operation": {
+        "type": "call",
+        "service": "{service}",
+        "body": {}
+      },
+      "responses": [
+        {
+          "status": 502,
+          "headers": {
+            "Z-Road-Error": "x",
+            "Content-Type": "text/html"
+          },
+          "body": "<html>oops</html>"
+        }
+      ],
+      "expect": {
+        "error": {
+          "kind": "zroad",
+          "status": 502,
+          "code": "unknown",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "name": "own_security_server_unreachable",
+      "description": "If the security server cannot be reached, raise a distinct 'unreachable' error (retryable).",
+      "operation": {
+        "type": "call",
+        "service": "{service}",
+        "body": {}
+      },
+      "server_down": true,
+      "expect": {
+        "error": {
+          "kind": "unreachable",
+          "retryable": true
+        }
+      }
+    },
+    {
+      "name": "token_is_sent_as_bearer",
+      "description": "A configured internal token is sent as Authorization: Bearer.",
+      "client_options": {
+        "token": "secret"
+      },
+      "operation": {
+        "type": "call",
+        "service": "{service}",
+        "body": {}
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {}
+        }
+      ],
+      "expect_requests": [
+        {
+          "method": "POST",
+          "path": "/r1/{service}",
+          "headers": {
+            "Authorization": "Bearer secret"
+          }
+        }
+      ],
+      "expect": {
+        "reply": {
+          "status": 200
+        }
+      }
+    },
+    {
+      "name": "shared_node_uses_member_prefix",
+      "description": "On a shared node every path is prefixed with /m/<instance>/<class>/<code> of the client's member.",
+      "client_options": {
+        "shared_node": true
+      },
+      "operation": {
+        "type": "call",
+        "service": "{service}",
+        "body": {}
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {}
+        }
+      ],
+      "expect_requests": [
+        {
+          "method": "POST",
+          "path": "/m/ZW/COM/12345678/r1/{service}"
+        }
+      ],
+      "expect": {
+        "reply": {
+          "status": 200
+        }
+      }
+    },
+    {
+      "name": "submit_queues_and_returns_the_message_id",
+      "description": "submit sends Z-Road-Mode: async and returns the message id from the 202 answer.",
+      "operation": {
+        "type": "submit",
+        "service": "{service}",
+        "body": {
+          "tin": "1"
+        }
+      },
+      "responses": [
+        {
+          "status": 202,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "message_id": "m1",
+            "status_url": "/internal/v1/outbox/m1"
+          }
+        }
+      ],
+      "expect_requests": [
+        {
+          "method": "POST",
+          "path": "/r1/{service}",
+          "headers": {
+            "Z-Road-Mode": "async"
+          }
+        }
+      ],
+      "expect": {
+        "message_id": "m1"
+      }
+    },
+    {
+      "name": "submit_surfaces_zroad_errors",
+      "description": "A Z-Road error while queuing (for example a bad request) is a typed error, not a crash.",
+      "operation": {
+        "type": "submit",
+        "service": "{service}",
+        "body": {
+          "tin": "1"
+        }
+      },
+      "responses": [
+        {
+          "status": 400,
+          "headers": {
+            "Content-Type": "application/json",
+            "Z-Road-Error": "invalid_request"
+          },
+          "body": {
+            "error": "invalid_request",
+            "message": "bad"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "kind": "zroad",
+          "status": 400,
+          "code": "invalid_request",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "name": "poll_pending",
+      "description": "Polling a queued request that is still being retried reports attempts and the last error.",
+      "operation": {
+        "type": "poll",
+        "message_id": "m1"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "state": "pending",
+            "item": {
+              "attempts": 2,
+              "last_error": "provider_unreachable: down"
+            }
+          }
+        }
+      ],
+      "expect_requests": [
+        {
+          "method": "GET",
+          "path": "/internal/v1/outbox/m1"
+        }
+      ],
+      "expect": {
+        "queued": {
+          "state": "pending",
+          "attempts": 2,
+          "last_error": "provider_unreachable: down"
+        }
+      }
+    },
+    {
+      "name": "poll_delivered",
+      "description": "A delivered queued request yields a reply decoded from body_b64.",
+      "operation": {
+        "type": "poll",
+        "message_id": "m1"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "state": "finished",
+            "result": {
+              "state": "delivered",
+              "status": 200,
+              "body_b64": "eyJzdGF0dXMiOiJWQUxJRCJ9",
+              "content_type": "application/json"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "queued": {
+          "state": "delivered",
+          "reply": {
+            "status": 200,
+            "json": {
+              "status": "VALID"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "poll_failed",
+      "description": "A queued request that ended in failure reports the error text.",
+      "operation": {
+        "type": "poll",
+        "message_id": "m1"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "state": "finished",
+            "result": {
+              "state": "failed",
+              "error": "access_denied: no"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "queued": {
+          "state": "failed",
+          "error": "access_denied: no"
+        }
+      }
+    },
+    {
+      "name": "wait_polls_until_delivered",
+      "description": "wait keeps polling while pending and returns the reply once delivered.",
+      "operation": {
+        "type": "wait",
+        "message_id": "m1",
+        "max_wait_secs": 10,
+        "interval_secs": 0.01
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "state": "pending",
+            "item": {}
+          }
+        },
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "state": "pending",
+            "item": {}
+          }
+        },
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "state": "finished",
+            "result": {
+              "state": "delivered",
+              "status": 200,
+              "body_b64": "eyJzdGF0dXMiOiJWQUxJRCJ9",
+              "content_type": "application/json"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "reply": {
+          "status": 200,
+          "json": {
+            "status": "VALID"
+          }
+        }
+      }
+    },
+    {
+      "name": "wait_reports_failure",
+      "description": "wait raises a 'queue_failed' error when the request ends in failure.",
+      "operation": {
+        "type": "wait",
+        "message_id": "m2",
+        "max_wait_secs": 5,
+        "interval_secs": 0.01
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "state": "finished",
+            "result": {
+              "state": "failed",
+              "error": "access_denied: no"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "kind": "queue_failed"
+        }
+      }
+    },
+    {
+      "name": "wait_times_out",
+      "description": "wait raises a 'timeout' error (retryable) if the request is still pending when max_wait passes.",
+      "operation": {
+        "type": "wait",
+        "message_id": "m3",
+        "max_wait_secs": 0.05,
+        "interval_secs": 0.01
+      },
+      "repeat_last_response": true,
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "state": "pending",
+            "item": {}
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "kind": "timeout",
+          "retryable": true
+        }
+      }
+    }
+  ]
+}
